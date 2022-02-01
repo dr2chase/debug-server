@@ -64,7 +64,7 @@ func DoDebug(port string) {
 	}
 
 	pid := strconv.Itoa(os.Getpid())
-	fmt.Printf("About to send pid:binary %s:%s", pid, bin)
+	fmt.Printf("Requesting debug of pid:binary %s:%s\n", pid, bin)
 	conn.Write([]byte(pid + ":" + bin + "\n"))
 	reply, err := bufio.NewReader(conn).ReadString('\n')
 	if wrong(err) {
