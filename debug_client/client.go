@@ -73,5 +73,5 @@ func DoDebug(port string) {
 	if strings.TrimSpace(reply) != "1" {
 		return
 	}
-	time.Sleep(60 * time.Second) // expect to be interrupted by a debugger here.
+	time.Sleep(10 * time.Second) // expect to be interrupted by a debugger here.
 }
