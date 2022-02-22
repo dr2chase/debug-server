@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -24,6 +25,8 @@ func wrong(err error) bool {
 	return true
 }
 
+// TryDebug checks to see if the DEBUG_SERVER environment variable is not empty,
+// and if so, uses that port in a call to DoDebug.
 func TryDebug() {
 	connPort := os.Getenv("DEBUG_SERVER")
 	if connPort == "" {
@@ -32,16 +35,31 @@ func TryDebug() {
 	DoDebug(connPort)
 }
 
+var flag int64 // 0 -> 1 (first, only debugger request) -> 2 (requests will return immediately)
+
+// DoDebug attempts, exactly once, to request that a debugger attach to this
+// process, sending a request of the form "pid:executable\n" to localhost:port.
+// If no port is provided, the default is "8080".
+// Any calls executed will the first call is still active will hang until it
+// returns.
 func DoDebug(port string) {
+	// Don't use defer, this runs in an interesting context and who knows what problems that might cause.
+	if !atomic.CompareAndSwapInt64(&flag, 0, 1) {
+		for atomic.LoadInt64(&flag) == 1 { // spin, not too busily.
+			time.Sleep(100 * time.Millisecond)
+		}
+		return
+	}
+
 	if port == "" {
 		port = "8080"
 	}
 
 	conn, err := net.Dial("tcp", "localhost:"+port)
 	if wrong(err) {
+		atomic.StoreInt64(&flag, 2)
 		return
 	}
-	defer conn.Close()
 
 	// get the binary name
 	bin := os.Args[0]
@@ -51,6 +69,8 @@ func DoDebug(port string) {
 			wd, err := os.Getwd()
 			if err != nil {
 				fmt.Printf("Getwd failed %v\n", err)
+				conn.Close()
+				atomic.StoreInt64(&flag, 2)
 				return
 			}
 			bin = filepath.Join(wd, bin)
@@ -58,6 +78,8 @@ func DoDebug(port string) {
 			bin, err = exec.LookPath(bin)
 			if err != nil {
 				fmt.Printf("LookPath failed %v\n", err)
+				conn.Close()
+				atomic.StoreInt64(&flag, 2)
 				return
 			}
 		}
@@ -68,10 +90,15 @@ func DoDebug(port string) {
 	conn.Write([]byte(pid + ":" + bin + "\n"))
 	reply, err := bufio.NewReader(conn).ReadString('\n')
 	if wrong(err) {
-		return
+		conn.Close()
+		atomic.StoreInt64(&flag, 2)
 	}
 	if strings.TrimSpace(reply) != "1" {
+		conn.Close()
+		atomic.StoreInt64(&flag, 2)
 		return
 	}
 	time.Sleep(10 * time.Second) // expect to be interrupted by a debugger here.
+	conn.Close()
+	atomic.StoreInt64(&flag, 2)
 }
