@@ -16,6 +16,7 @@ import (
 )
 
 var port = "8080"
+var command = "gdlv"
 
 func wrong(err error) bool {
 	if err == nil {
@@ -27,6 +28,7 @@ func wrong(err error) bool {
 
 func main() {
 	flag.StringVar(&port, "p", port, "Localhost port to listen on")
+	flag.StringVar(&command, "c", command, "Debugging command to run")
 	flag.Parse()
 
 	// Start the server and listen for incoming connections.
@@ -82,13 +84,17 @@ func handle(conn net.Conn) {
 	conn.Write(one)
 	// expect child process has gone to sleep for 10 seconds
 
-	fmt.Printf("About to gdlv attach %s %s\n", pid, bin)
+	fmt.Printf("About to %s attach %s %s\n", command, pid, bin)
 
-	gdlv := exec.Command("gdlv", "attach", pid, bin)
-	stdOutErr, err := gdlv.CombinedOutput()
+	gdlv := exec.Command(command, "attach", pid, bin)
+	gdlv.Stdin = os.Stdin
+	gdlv.Stdout = os.Stdout
+	gdlv.Stderr = os.Stderr
+	gdlv.Start()
+	err = gdlv.Wait()
 	if wrong(err) {
-		fmt.Printf("gdlv failed:\n%s\n", stdOutErr)
+		fmt.Printf("%s failed:\n%v\n", command, err)
 	} else {
-		fmt.Printf("Done with gdlv attach %s %s\n", pid, bin)
+		fmt.Printf("Done with %s attach %s %s\n", command, pid, bin)
 	}
 }
